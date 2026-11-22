@@ -157,6 +157,8 @@ const DEFAULT_SETTINGS = {
   autoDownloadYtDlp: true,
   autoFetchFfmpeg: true,
   browserAssist: true,
+  // 抖音走 CDP：驱动用户自己带调试端口的浏览器（0 = 关闭，2026-11-22）
+  cdpPort: 9222,
   historyLimit: HISTORY_DEFAULT_LIMIT,
   parallel: 2,
 };

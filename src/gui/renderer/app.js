@@ -86,6 +86,7 @@ async function loadSettings() {
   $('#auto-ytdlp').checked = s.autoDownloadYtDlp !== false;
   $('#auto-ffmpeg').checked = s.autoFetchFfmpeg !== false;
   $('#browser-assist').checked = s.browserAssist !== false;
+  $('#cdp-port').value = Number.isFinite(Number(s.cdpPort)) ? Number(s.cdpPort) : 9222;
   $('#version').textContent = s.version ? ` · v${s.version}` : '';
 }
 
@@ -105,6 +106,8 @@ function collectOptions() {
     autoDownloadYtDlp: $('#auto-ytdlp').checked,
     autoFetchFfmpeg: $('#auto-ffmpeg').checked,
     browserAssist: $('#browser-assist').checked,
+    // 抖音走 CDP：驱动用户自己带调试端口的浏览器（0 = 关闭）
+    cdpPort: Math.max(0, Number($('#cdp-port').value) || 0),
   };
 }
 
@@ -1117,7 +1120,7 @@ function bindUi() {
   });
 
   // 选项变化即保存
-  for (const sel of ['#out-dir', '#quality', '#codec', '#engine', '#concurrency', '#parallel', '#cookies-file', '#cookies-browser', '#proxy', '#overwrite', '#live', '#auto-ytdlp', '#auto-ffmpeg', '#browser-assist']) {
+  for (const sel of ['#out-dir', '#quality', '#codec', '#engine', '#concurrency', '#parallel', '#cookies-file', '#cookies-browser', '#proxy', '#overwrite', '#live', '#auto-ytdlp', '#auto-ffmpeg', '#browser-assist', '#cdp-port']) {
     $(sel).addEventListener('change', persist);
   }
   $('#parallel').addEventListener('change', pump);

@@ -187,6 +187,14 @@
               <input type="checkbox" id="browser-assist" />
               <span>解析不了时用内置浏览器渲染页面抓视频（抖音等）</span>
             </label>
+            <label class="field">
+              <span>抖音浏览器通道（CDP 端口）</span>
+              <input type="number" id="cdp-port" min="0" max="65535" step="1" placeholder="9222（0 = 关闭）" />
+              <small class="hint">抖音风控会弹验证码。用 <code>build\start-cdp-browser.cmd</code> 或
+                <code>start msedge --remote-debugging-port=9222</code> 开一个带调试端口的浏览器，
+                工具就会借它抓真实地址（基本不弹验证码）；填 0 则只用内置浏览器。</small>
+            </label>
+
           </div>
         </details>
 
