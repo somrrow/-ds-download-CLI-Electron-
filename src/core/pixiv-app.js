@@ -136,13 +136,31 @@ async function appGet(pathname, params = {}, opts = {}) {
     if (v === undefined || v === null || v === '') continue;
     url.searchParams.set(k, String(v));
   }
-  const res = await request(url.toString(), {
-    timeout: opts.timeout || 15000,
-    retries: 0,
-    wantBody: true,
-    signal: opts.signal,
-    headers: appHeaders(token),
-  });
+  /**
+   * app-api 在 Cloudflare 后面，经代理时偶发 ECONNRESET（2026-11-23 实测：
+   * 同一秒里 `searchUser` 一次成功、一次被重置）。所以这里自己重试 2 次，
+   * 别让一次抽风就把「按作者搜」判死刑。
+   */
+  let res;
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      res = await request(url.toString(), {
+        timeout: opts.timeout || 15000,
+        retries: 0,
+        wantBody: true,
+        signal: opts.signal,
+        headers: appHeaders(token),
+      });
+      break;
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err && err.message);
+      if (!/ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|EPIPE|socket hang up|超时|timeout|重置/i.test(msg)) break;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  if (!res) throw lastErr || new Error('Pixiv App API 请求失败');
   const text = (res.body || Buffer.alloc(0)).toString('utf8');
   let json;
   try {

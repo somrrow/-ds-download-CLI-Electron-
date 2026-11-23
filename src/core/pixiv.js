@@ -818,7 +818,38 @@ async function searchAndDownloadPixiv(keyword, opts = {}) {
     onLog(`按作者名搜：${parsed.value}（最多 ${count} 个）`);
     found = await searchPixivByAuthor(parsed.value, searchOpts);
   } else {
-    found = await searchPixiv(parsed.value || keyword, searchOpts);
+    /**
+     * 关键词搜索 **和** 画师名搜索并行跑（2026-11-23 现场：群里发「来点七氏的图」，
+     * 七氏是画师名不是标签，tag/keyword/原生搜索全 0 条）。
+     * 有 App API 登录态时按名字能找到画师本人：把**本人作品排在前面**，
+     * 关键词结果（同名的同人图之类）接在后面，两类都不丢。
+     */
+    const kwWord = parsed.value || keyword;
+    const authorPromise =
+      opts.appApi !== false
+        ? searchPixivByAuthor(kwWord, { ...searchOpts, maxAuthorCandidates: 1 }).catch(() => null)
+        : Promise.resolve(null);
+    const [kwRes, authorRes] = await Promise.all([searchPixiv(kwWord, searchOpts), authorPromise]);
+    found = kwRes;
+    /**
+     * 只在**关键词结果不够**时才用画师作品补。
+     *
+     * 2026-11-23 实测踩坑：pixiv 上真有人把昵称叫「初音ミク」，无条件把画师作品插到最前面，
+     * 会把「来点初音ミク的图」变成"这个同名用户的作品"。关键词能凑够数量 → 它是正常标签/角色，保持原样。
+     */
+    if (authorRes && authorRes.items.length && kwRes.items.length < searchOpts.limit) {
+      const seen = new Set(authorRes.items.map((x) => x.pid));
+      const merged = [...authorRes.items, ...kwRes.items.filter((x) => !seen.has(x.pid))];
+      onLog(
+        `「${kwWord}」按画师名找到 ${authorRes.items.length} 个本人作品` +
+          (kwRes.items.length ? `，另有 ${kwRes.items.length} 条关键词结果` : ''),
+      );
+      found = {
+        items: merged.slice(0, searchOpts.limit),
+        backend: kwRes.items.length ? `pixiv-author+${kwRes.backend}` : 'pixiv-author（按画师名）',
+        errors: [...(kwRes.errors || []), ...(authorRes.errors || [])],
+      };
+    }
   }
 
   const results = [];
@@ -1339,7 +1370,9 @@ async function searchPixivByAuthor(name, opts = {}) {
         const exact = users.filter((u) => norm(u.userName) === target);
         const loose = target.length >= 4 ? users.filter((u) => norm(u.userName).includes(target)) : [];
         const chosen = exact.length ? exact : loose;
-        for (const u of chosen) if (u.userId && !uids.includes(u.userId)) uids.push(u.userId);
+        // 同名画师可能一堆（实测「七氏」有 19 个），只取前 5 个，避免一次打太多请求
+        const maxCand = Math.max(1, Math.min(5, Number(opts.maxAuthorCandidates) || 5));
+        for (const u of chosen.slice(0, maxCand)) if (u.userId && !uids.includes(u.userId)) uids.push(u.userId);
         if (chosen.length) {
           (opts.onLog || (() => {}))(`App API 按名字找到画师：${chosen[0].userName}（uid ${chosen[0].userId}）`);
         } else if (users.length) {
