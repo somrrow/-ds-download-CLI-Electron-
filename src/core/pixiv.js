@@ -978,7 +978,6 @@ async function downloadWorkOnce(it, opts = {}) {
      */
     const totalBytes = Math.max(1, (best?.size || 0) || 4 * 1024 * 1024) * Math.max(1, paths.length);
     const estSec = best ? totalBytes / (best.rate * 1000) : 999;
-    const useRace = estSec <= 20 && usable.length > 1;
     const hostDeadlineMs = Math.min(180000, Math.max(30000, Math.round(estSec * 2000)));
     if (best && estSec > 240) {
       return withPreviewUrls({
@@ -1026,31 +1025,23 @@ async function downloadWorkOnce(it, opts = {}) {
         clearTimeout(timer);
       }
     };
-    const aborts = new Map();
-    const racer = (host) => {
-      const ac = new AbortController();
-      aborts.set(host, ac);
-      return attempt(host, ac.signal);
-    };
+    /**
+     * 依次试（按测速排序），谁先成功用谁。
+     *
+     * 2026-11-23 改动：原来这里是「最快的两条**同时**下载、谁先完成用谁」（抢跑）。
+     * 抢跑虽然能躲开"测速偏乐观"的情况，但两个下载器写的是**同一个目录**，
+     * 输的那条在被打断前可能已经落盘，于是会出现 `002 (1).jpg` 这种重复文件
+     * （实测跑出 4 个文件 / 5.0MB，正常应是 2 个 / 4.1MB）。
+     * 现在测速本身已经比较准（会量真实吞吐），按顺序试就够了，也不会留垃圾。
+     */
     let won = null;
-    const head = useRace ? order2.slice(0, 2) : order2.slice(0, 1);
-    if (head.length) {
+    for (const host of order2) {
       try {
-        won = await Promise.any(head.map(racer));
-      } catch {
-        won = null;
-      }
-      for (const [host, ac] of aborts) if (!won || host !== won.host) ac.abort();
-    }
-    if (!won) {
-      for (const host of order2.slice(head.length)) {
-        try {
-          won = await attempt(host);
-          break;
-        } catch (err) {
-          lastError = err.message;
-          onLog('图床 ' + host.replace('https://', '') + ' 不通（' + String(lastError).slice(0, 30) + '）');
-        }
+        won = await attempt(host);
+        break;
+      } catch (err) {
+        lastError = err.message;
+        onLog('图床 ' + host.replace('https://', '') + ' 不通（' + String(lastError).slice(0, 30) + '）');
       }
     }
     if (won) {
