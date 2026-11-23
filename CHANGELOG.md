@@ -1,5 +1,28 @@
 # 更新日志
 
+## v1.0.11（2026-11-23）
+
+### 新增
+
+- **Pixiv App API 接入**（`src/core/pixiv-app.js`），有了它「按作者名搜」才真正能用：
+  - `GET /v1/search/user?word=名字` 按名字找画师 → `GET /v1/user/illusts` 列作品；
+  - `GET /v1/illust/detail` 直接给 `meta_pages`（多页原图），省掉反代逐页探测；
+  - `GET /v1/search/illust` 关键词搜索（备用）。
+  - token 存在 `%APPDATA%\ds-download\tools\pixiv-token.json`，access_token 过期会自动用
+    refresh_token 续期并写回；没有 token 时**自动退回**原来的网页/反代路径。
+  - 作者名核对变严：**完全同名优先**，没有完全同名才允许包含匹配（且要求输入 ≥4 字）——
+    修掉了 `author:MyT` 被解析成「Myth1carts」的误伤。
+- `build/pixiv-login.cjs` 的 `client_id` 修正为 `MOBrBDS8blbauoSck0ZfDbtuzpyT`
+  （短的那版会返回 403 / 918「无效 OAuth 客户端」）。
+
+### 实测（同一台机器，走代理）
+
+| 输入 | 结果 | 耗时 |
+| --- | --- | --- |
+| `author:米山舞` | 4 条，作者全是米山舞 | 1s |
+| `author:MyT` | 4 条，作者 myt（不再误匹配 Myth1carts） | 2s |
+| `uid:87363477` | 4 条（App API） | 1s |
+| `pid 150578777` | 1 条，2 页 | 0s |
 ## v1.0.10（2026-11-23）
 
 ### 新增

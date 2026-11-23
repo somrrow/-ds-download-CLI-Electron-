@@ -21,7 +21,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 
-const CLIENT_ID = 'MOBrBDS8blbauoSck0Zf';
+// ⚠️ 必须是带 DbtuzpyT 的完整 client_id（2026-11-23 实测：短的那版会 403 / 918 无效客户端）
+const CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
 const CLIENT_SECRET = 'lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj';
 const REDIRECT_URI = 'https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback';
 const LOGIN_URL = 'https://app-api.pixiv.net/web/v1/login';

@@ -1233,7 +1233,23 @@ async function fetchIllustDetail(pid, opts = {}) {
 async function searchPixivByPidWork(pid, opts = {}) {
   const id = String(pid || '').trim();
   if (!/^\d+$/.test(id)) throw new Error(`pid 不合法：${pid}`);
-  const item = await fetchIllustDetail(id, opts);
+  /**
+   * 有 App API 登录态时优先用它：`/v1/illust/detail` 的 `meta_pages` 直接给全部原图，
+   * 省掉反代逐页探测（`_p0 → _p1 …`）那串请求。失败再退回网页接口。
+   */
+  let item = null;
+  if (opts.appApi !== false) {
+    try {
+      const app = require('./pixiv-app');
+      if (app.hasToken()) {
+        const got = await app.illustDetail(id, opts);
+        if (got && got.pid) item = got;
+      }
+    } catch (err) {
+      (opts.onLog || (() => {}))(`App API 取作品详情失败（改用网页接口）：${err.message}`);
+    }
+  }
+  if (!item) item = await fetchIllustDetail(id, opts);
   if (opts.allowR18 !== true && ratingOf(item) !== 0) {
     return { items: [], backend: 'pixiv-pid', errors: ['这个作品是成人向的，按设置跳过'] };
   }
@@ -1246,6 +1262,18 @@ async function searchPixivByUid(uid, opts = {}) {
   if (!/^\d+$/.test(id)) throw new Error(`uid 不合法：${uid}`);
   const want = Math.max(1, Math.min(Number(opts.maxItems) || 500, Number(opts.limit) || 3));
   const errors = [];
+  // 有 App API 登录态就一次拿全（`/v1/user/illusts` 直接带标题/作者/原图/页数）
+  if (opts.appApi !== false) {
+    try {
+      const app = require('./pixiv-app');
+      if (app.hasToken()) {
+        const items = await app.userIllusts(id, { ...opts, limit: want });
+        if (items.length) return { items, backend: 'pixiv-uid（App API）', errors };
+      }
+    } catch (err) {
+      errors.push(`App API 取画师作品失败：${err.message}`);
+    }
+  }
   const profile = await pixivAjax(`/ajax/user/${encodeURIComponent(id)}/profile/all`, opts);
   const pids = Object.keys(profile?.body?.illusts || {})
     .map(String)
@@ -1293,7 +1321,36 @@ async function searchPixivByAuthor(name, opts = {}) {
    *      Bing/Baidu 的 `site:` 结果里也没有 pixiv 用户页（都实测过）→ 只能明确告诉用户改用 uid。
    */
   let uids = [];
-  if (opts.cookie) {
+  /**
+   * ① 首选 **App API**（2026-11-23）：`/v1/search/user?word=名字` 按名字直接找到画师，
+   *    这是网页接口（`/ajax/search/users` 现在连登录态都 400）做不到的。
+   */
+  if (opts.appApi !== false) {
+    try {
+      const app = require('./pixiv-app');
+      if (app.hasToken()) {
+        const users = await app.searchUser(q, opts);
+        /**
+         * 名字核对（2026-11-23 踩过）：`/v1/search/user?word=MyT` 首位是「Myth1carts」，
+         * 只按"包含"过滤会把别人的作品当成本人的。规则：
+         *   ① 有**完全同名**的就只认完全同名；
+         *   ② 没有才允许包含匹配，但要求输入 ≥4 个字（避免 MyT 这种短名误伤）。
+         */
+        const exact = users.filter((u) => norm(u.userName) === target);
+        const loose = target.length >= 4 ? users.filter((u) => norm(u.userName).includes(target)) : [];
+        const chosen = exact.length ? exact : loose;
+        for (const u of chosen) if (u.userId && !uids.includes(u.userId)) uids.push(u.userId);
+        if (chosen.length) {
+          (opts.onLog || (() => {}))(`App API 按名字找到画师：${chosen[0].userName}（uid ${chosen[0].userId}）`);
+        } else if (users.length) {
+          (opts.onLog || (() => {}))(`App API 搜到 ${users.length} 个相似画师，但名字都对不上「${q}」`);
+        }
+      }
+    } catch (err) {
+      errors.push(`App API 搜画师失败：${err.message}`);
+    }
+  }
+  if (!uids.length && opts.cookie) {
     try {
       const word = encodeURIComponent(q);
       const json = await pixivAjax(`/ajax/search/users?word=${word}&order=date_d&mode=all&p=1&s_mode=s_username`, opts);
@@ -1327,7 +1384,9 @@ async function searchPixivByAuthor(name, opts = {}) {
         if (matched.length >= want) break;
         const a = norm(it.author);
         if (!a) continue;
-        if (!a.includes(target) && !target.includes(a)) continue;
+        // 同一套核对规则：完全同名，或输入 ≥4 字时允许包含
+        const authorOk = a === target || (target.length >= 4 && (a.includes(target) || target.includes(a)));
+        if (!authorOk) continue;
         if (!matched.some((x) => x.pid === it.pid)) matched.push(it);
       }
       if (!r.items.length && r.errors?.length) errors.push(`uid ${uid}：${r.errors[0]}`);
