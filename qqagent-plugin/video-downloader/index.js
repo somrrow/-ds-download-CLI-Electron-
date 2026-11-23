@@ -2051,6 +2051,8 @@ async function runPixivSearchToolCli(keyword, count, c = cfg(), opts = {}) {
     if (opts.r18 === true || c.pixivAllowR18 === true) args.push('--r18');
     // 排除 AI 生成的作品（2026-10-25；参照 pixiv-illust 插件的同名设置）
     if (c.pixivExcludeAI === true) args.push('--exclude-ai');
+    // 图片免代理直连（2026-11-23）
+    if (c.pixivDirect === true) args.push('--pixiv-direct');
     /**
      * 节点自救（2026-10-19，插件设置里**默认关**）。
      * 打开后：原生搜索被代理重置时，工具会通过 Clash 的控制接口把代理组切到一个

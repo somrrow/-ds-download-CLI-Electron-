@@ -1,5 +1,18 @@
 # 更新日志
 
+## v1.0.10（2026-11-23）
+
+### 新增
+
+- **Pixiv 取图免代理直连**（`--pixiv-direct` / 插件设置「Pixiv 取图免代理直连」，默认关）。
+  做法参考第三方客户端 Pixiv-Shaft（`HttpDns` + `RubySSLSocketFactory` + `TrustAllCertManager`）：
+  1. **DoH**（阿里 / doh.pub / 1.0.0.1 / Cloudflare 依次试）拿 `i.pximg.net` 的真实 IP，
+     过滤掉被污染的应答，缓存 1 小时，失败时用内置 IP `210.140.139.133/134` 兜底；
+  2. **TLS 握手不发 SNI**（GFW 按 SNI 匹配域名），HTTP 里用 `Host: i.pximg.net` 指定站点；
+  3. 多个 IP 先 Range 测速，挑最快的下载；失败自动退回原来的反代/代理多路逻辑。
+
+  实测（本机、无代理）：单张 2.18MB 原图 1.1~5.7 秒（0.4~4MB/s，线路波动大）；
+  对比走代理 30~100KB/s。⚠️ 只对图片 CDN 有效，**搜索/API 仍需代理**。
 ## v1.0.9（2026-11-23）
 
 ### 修复

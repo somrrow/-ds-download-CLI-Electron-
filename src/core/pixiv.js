@@ -792,6 +792,8 @@ async function searchAndDownloadPixiv(keyword, opts = {}) {
     allowR18: opts.allowR18 === true,
     apiBase: opts.apiBase,
     excludeAI: opts.excludeAI,
+    // 图片免代理直连（2026-11-23）
+    pixivDirect: opts.pixivDirect,
     userAgent: opts.userAgent,
     timeout: opts.timeout,
     signal: opts.signal,
@@ -923,6 +925,47 @@ async function downloadWorkOnce(it, opts = {}) {
     const paths = (illust.urls || []).map((u) => {
       try { return new URL(u).pathname; } catch { return ''; }
     }).filter(Boolean);
+
+    /**
+     * 先试**免代理直连**（2026-11-23）：DoH 拿 i.pximg.net 真实 IP → 无 SNI 的 TLS → Host 头。
+     * 实测比走代理快一个数量级（直连 0.5~2MB/s，代理 30~100KB/s）。
+     * 只在"没有自定义 mirrorBase / 没有注入 fetchText（测试夹具）"时启用；
+     * 失败就退回下面的反代/代理多路逻辑，不会更差。
+     */
+    const canDirect =
+      opts.pixivDirect === true &&
+      !opts.mirrorBase &&
+      typeof opts.fetchText !== 'function' &&
+      paths.length > 0 &&
+      paths.every((x) => /^\/img-(?:original|master)\//.test(x));
+    if (canDirect) {
+      try {
+        const { downloadPixivPathsDirect } = require('./pixiv-direct');
+        const dir = path.join(outDir, folder);
+        const got = await downloadPixivPathsDirect(paths, {
+          outDir: dir,
+          host: 'i.pximg.net',
+          onLog,
+          timeout: opts.timeout || 20000,
+          signal: opts.signal,
+          fetchText: opts.fetchText,
+        });
+        onLog(`免代理直连完成（${got.ips.join(', ')}）`);
+        return withPreviewUrls({
+          ...entry,
+          ok: true,
+          filePath: got.files.length === 1 ? got.files[0] : dir,
+          dir,
+          files: got.files,
+          bytes: got.bytes,
+          pages: illust.urls.length,
+          error: '',
+        }, it);
+      } catch (err) {
+        onLog(`免代理直连没成功（${String(err.message).slice(0, 60)}），改用反代/代理`);
+      }
+    }
+
     let preferred = '';
     try { preferred = String(require('node:fs').readFileSync(IMAGE_HOST_FILE, 'utf8') || '').trim(); } catch { /* 还没记过 */ }
     const order = [...new Set([preferred, ...HOSTS].filter(Boolean))];

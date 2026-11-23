@@ -127,6 +127,7 @@ const HELP = `
       --exclude-pids <pids>  已经发过的作品 pid（逗号分隔），搜图时跳过（插件自动传）
       --r18                 搜索时允许成人向作品（默认只出全年龄；群聊里别开）
       --exclude-ai          搜索时排除 AI 生成的作品（按标签判定，默认不排除）
+      --pixiv-direct        图片免代理直连（DoH + 无 SNI 的 TLS）；搜索仍需代理，默认关
       --cdp-port <端口>     用带调试端口的浏览器（默认 9222）下载抖音等强风控站点；--no-cdp 关闭该通道
       --list-only           只列出搜索结果，不下载
       --pixiv-source <来源>  Pixiv 取图来源：auto（默认，先官方接口再自动退回反代）/ api / mirror
@@ -308,6 +309,10 @@ function parseArgs(argv) {
         opts.count = Math.max(1, Math.min(500, Number(need(i, a)) || 1));
         break;
       }
+      case '--pixiv-direct':
+        // 图片免代理直连（DoH 拿真实 IP + 无 SNI 的 TLS）；搜索/API 仍需代理
+        opts.pixivDirect = true;
+        break;
       case '--cdp-port':
         // 用带调试端口的浏览器（Edge/Chrome --remote-debugging-port=9222）下载抖音这类强风控站点
         opts.cdpPort = Math.max(1, Number(need(i, a)) || 9222);
@@ -892,6 +897,8 @@ async function runPixivSearch(downloader, opts = {}) {
     nativeFallback: opts.nativeFallback !== false,
     // 节点自救（默认关）：`--pixiv-node-failover` 或 VIDEOGRAB_PIXIV_FAILOVER=1
     pixivNodeFailover: Boolean(opts.pixivNodeFailover),
+    // 图片免代理直连（DoH + 无 SNI TLS，2026-11-23）
+    pixivDirect: Boolean(opts.pixivDirect),
     // 已经发过的 pid：搜图时直接跳过（2026-10-20，插件会传进来）
     excludePids: Array.isArray(opts.excludePids) ? opts.excludePids : [],
     allowR18: Boolean(opts.allowR18),
