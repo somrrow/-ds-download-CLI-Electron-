@@ -480,7 +480,7 @@ if (process.argv.includes('--search')) {
     source: '指令',
     forceFailureNotice: true
   });
-  const failOk = failOut.ok === false && failTexts.length === 1 && /连不上 Pixiv|抓|ECONNRESET|失败/i.test(failTexts[0] || '');
+  const failOk = failOut.ok === false && failTexts.length === 1 && /连不上 Pixiv|抓|ECONNRESET|失败|反代|取不到图/i.test(failTexts[0] || '');
   if (!failOk) bad += 1;
   console.log(`  ${failOk ? '✓' : '✗'} 搜图失败会反馈：ok=${failOut.ok}，群里收到 ${failTexts.length} 句「${failTexts[0] || '—'}」`);
 
@@ -1246,6 +1246,23 @@ if (process.argv.includes('--cmd')) {
     const ok = got.includes(want) && got.includes('猫娘');
     if (!ok) bad += 1;
     console.log(`  ${ok ? '✓' : '✗'} 来源说明（${backend}）→ ${got}`);
+  }
+  // 失败原因不能是堆栈（2026-11-23 事故：群里收到 `at async searchAndDownloadPixiv (…js:811:13)`）
+  {
+    const stackOnly = `at async searchAndDownloadPixiv (D:\\x\\tool-src\\src\\core\\pixiv.js:811:13)
+    at async runPixivSearch (D:\\x\\tool-src\\src\\cli.js:812:20)`;
+    const withMsg = `运行出错：网络错误：连接被拒绝（ECONNREFUSED）—— 站点不可达
+    at request (D:\\x\\src\\core\\http.js:290:9)`;
+    const t1 = mod.searchFailureText(stackOnly);
+    const t2 = mod.searchFailureText(withMsg);
+    const clean1 = mod.cleanToolError ? mod.cleanToolError(stackOnly) : '';
+    const okStack =
+      !/at async|\.js:\d+/.test(t1) &&
+      !/at async|\.js:\d+/.test(t2) &&
+      clean1 === '' &&
+      /代理|网络|没给出具体原因|反代/.test(t2);
+    if (!okStack) bad += 1;
+    console.log(`  ${okStack ? '✓' : '✗'} 失败原因不泄漏堆栈（纯栈→「${t1.slice(0, 18)}…」，带消息→「${t2.slice(0, 18)}…」）`);
   }
   // 按会话开成人向（2026-10-26）：名单语法与匹配规则
   {

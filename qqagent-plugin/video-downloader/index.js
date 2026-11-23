@@ -2161,7 +2161,12 @@ async function runPixivSearchToolCli(keyword, count, c = cfg(), opts = {}) {
           .slice(-n);
       const errLines = cleanTail(stderr, 2);
       const outLines = cleanTail(stdout, 3);
-      const detail = (errLines.length ? errLines : outLines).join(' | ').slice(0, 220);
+      // ⚠️ 优先用洗干净的那句人话；栈帧不能当原因（2026-11-23 事故）
+      const detail =
+        cleanToolError(stderr) ||
+        cleanToolError(stdout) ||
+        (errLines.length ? errLines.join(' | ') : '') ||
+        `搜图工具退出码 ${code}，且没有产出任何文件`;
       // 诊断信息要够查问题：命令、工作目录、退出码/信号、两路输出各多少字节
       vlog(
         '搜图工具失败：code=%s signal=%s out=%dB err=%dB cwd=%s',
@@ -2190,8 +2195,39 @@ async function runPixivSearchToolCli(keyword, count, c = cfg(), opts = {}) {
  * 于是搜图失败时没有任何人说话：日志里有一行，群里一片安静，用户以为机器人没理他。
  * 所以失败必须在**插件自己这边**回一句（原因要具体，别只说"失败了"）。
  */
+/**
+ * 把「工具/子进程的报错文本」洗成**一句人话**（2026-11-23 用户报：群里收到的是堆栈
+ * `at async searchAndDownloadPixiv (D:\…\pixiv.js:811:13)`）。
+ *
+ * 原因：CLI 出错时把 `err.stack` 打到 stderr，插件又取了 stderr 的**最后两行**当原因 ——
+ * 最后两行正好是栈帧。这里统一处理：
+ *   · 丢掉栈帧（`at …`）、PowerShell 包装（所在位置 / CategoryInfo / FullyQualifiedErrorId / + …）；
+ *   · 优先取带「运行出错 / ✖ / 错误 / 失败 / 超时 / 拒绝 / 重置」的那一行；
+ *   · 去掉 `运行出错：` / `Error:` / `node.exe :` 之类前缀。
+ */
+function cleanToolError(text) {
+  const lines = String(text || '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => !/^at\s+/i.test(s))
+    .filter((s) => !/^(node\.exe\s*:|所在位置|CategoryInfo|FullyQualifiedErrorId|\+\s*|---|运行出错：?$)/i.test(s));
+  const pick =
+    lines.find((s) => /运行出错|✖|错误|失败|无法|超时|拒绝|重置|不存在|不支持/.test(s)) ||
+    lines.find((s) => !/\.js:\d+|\.mjs:\d+/.test(s)) ||
+    lines[0] ||
+    '';
+  return pick
+    .replace(/^运行出错：\s*/, '')
+    .replace(/^node\.exe\s*:\s*/i, '')
+    .replace(/^Error:\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 function searchFailureText(error) {
-  const text = String(error || '').trim();
+  // ⚠️ 先洗掉堆栈/包装噪音，否则会把 t async … 直接发到群里（2026-11-23 事故）
+  const text = cleanToolError(error);
+  if (!text) return '搜图工具这次没给出具体原因（可能是 pixiv / 反代那边抽风），过一会儿再让我试';
   /**
    * ⚠️ 这里必须**按"是哪一条路失败、为什么失败"分开说**，不能一句"要挂代理"糊过去。
    *
@@ -2210,6 +2246,13 @@ function searchFailureText(error) {
    */
   if (/原生搜索临时跳过/.test(text)) {
     return 'Pixiv 那边刚刚连续断过，我先把手上的原生搜索停了 5 分钟——过几分钟再让我试，或者换个写法（日文原名 / 作者名）';
+  }
+  /**
+   * 反代/图床整体不可用（2026-11-23 现场：几个反代 500、pixiv 直连超时，
+   * 用户拿到的是一串堆栈，模型只能自己猜"反代挂了"）。这里给一句确定的。
+   */
+  if (/反代|pixiv\.re|i\.pixiv|图床|500|502|503|图片反代/i.test(text) && !/原生搜索/.test(text)) {
+    return 'pixiv 的图片反代这会儿取不到图（500/超时），过几分钟再试；也可以换个关键词，或等代理恢复';
   }
   if (/原生搜索失败/.test(text)) {
     if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|连接被拒绝|连接超时|超时|timeout|网络|ECONNRESET/i.test(text)) {
@@ -3221,5 +3264,7 @@ export {
   backendNoteText,
   // 按会话判断谁允许成人向（2026-10-26；导出给自测）
   chatAllowsR18,
+  // 把子进程报错洗成一句人话（导出给自测）
+  cleanToolError,
   parseR18ChatToken
 };

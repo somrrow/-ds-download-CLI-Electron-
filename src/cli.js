@@ -975,7 +975,15 @@ if (require.main === module) {
     })
     .catch((err) => {
       settled = true;
-      process.stderr.write(`运行出错：${err && err.stack ? err.stack : err}\n`);
+      /**
+       * ⚠️ 默认只打**一句话**（2026-11-23 用户报：群里收到的是堆栈
+       * `at async searchAndDownloadPixiv (…)`）。插件会取 stderr 的尾部当失败原因，
+       * 打完整 stack 的话末尾两行永远只有 `at …`，群里就只看到堆栈。
+       * 需要排查时用环境变量 `VIDEOGRAB_DEBUG=1` 再打开 stack。
+       */
+      const msg = (err && err.message) || String(err || '未知错误（没有错误信息）');
+      process.stderr.write(`运行出错：${msg}\n`);
+      if (process.env.VIDEOGRAB_DEBUG === '1' && err && err.stack) process.stderr.write(`${err.stack}\n`);
       process.exitCode = 1;
     });
 }
